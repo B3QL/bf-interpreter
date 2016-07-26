@@ -4,12 +4,43 @@
 class InvalidProgramException(Exception):
     pass
 
+class CyclicBoundedList(list):
+    
+    def __init__(self, lower, upper, elements=[]):
+        self._lower_bound = lower
+        self._upper_bound = upper
+        super(CyclicBoundedList, self).__init__(
+                self.__transform_value(e) for e in elements)
+    
+    @property
+    def lower_bound(self):
+        return self._lower_bound
+
+    @property
+    def upper_bound(self):
+        return self._upper_bound
+
+    def __transform_value(self, val):
+        if val < self._lower_bound:
+            val += self._upper_bound
+        return val % self._upper_bound
+
+    def __setitem__(self, idx, val):
+        super(CyclicBoundedList, self).__setitem__(idx,
+                self.__transform_value(val))
+
+    def append(self, item):
+        super(CyclicBoundedList, self).append(
+                self.__transform_value(item))
+
 
 class BF(object):
 
     def __init__(self):
         self._program = None
-        self._memory = [0]
+        cell_size = 256 # 8-bit
+        self._memory = CyclicBoundedList(lower=0, upper=cell_size)
+        self._memory.append(0)
         self._data_pointer = 0
 
     def load(self, program):
@@ -60,9 +91,4 @@ class BF(object):
                 self._data_pointer += 1
     
     def _increment_memory(self, value):
-        cell_size = 256 # 8-bit
-        current_value = self._memory[self._data_pointer] 
-        new_val = current_value + value 
-        if new_val < 0:
-            new_val += cell_size
-        self._memory[self._data_pointer] = new_val % cell_size
+        self._memory[self._data_pointer] += value
