@@ -1,0 +1,4 @@
+[ ] Add mode for fixed memory size
+[ ] Improve parser error output (including symbol position and line)
+[ ] Add loading programs from files
+[ ] Support other exotic languages
