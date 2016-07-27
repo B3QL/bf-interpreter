@@ -10,7 +10,7 @@ class CyclicBoundedList(list):
         self._lower_bound = lower
         self._upper_bound = upper
         super(CyclicBoundedList, self).__init__(
-                self.__transform_value(e) for e in elements)
+                self._transform_value(e) for e in elements)
     
     @property
     def lower_bound(self):
@@ -20,27 +20,67 @@ class CyclicBoundedList(list):
     def upper_bound(self):
         return self._upper_bound
 
-    def __transform_value(self, val):
+    def _transform_value(self, val):
         if val < self._lower_bound:
             val += self._upper_bound
         return val % self._upper_bound
 
     def __setitem__(self, idx, val):
         super(CyclicBoundedList, self).__setitem__(idx,
-                self.__transform_value(val))
+                self._transform_value(val))
 
     def append(self, item):
         super(CyclicBoundedList, self).append(
-                self.__transform_value(item))
+                self._transform_value(item))
+
+    def insert(self, idx, val):
+        super(CyclicBoundedList, self).insert(
+                idx, self._transform_value(item))
+
+    def extend(self, element):
+        super(CyclicBoundedList, self).extend(
+                self._transform_value(e) for e in element)
+
+
+class ExpandableMemory(object):
+
+    def __init__(self, cell_size, cell_value=0):
+        self._list = CyclicBoundedList(lower=0, upper=2**cell_size)
+        self._cell_value = cell_value
+
+    def __getitem__(self, idx):
+        self._check_and_expand(idx)
+        return self._list[idx]
+
+    def _check_and_expand(self, idx):
+        if self._index_out_of_range(idx):
+            self._expand_memory(idx)
+
+    def _index_out_of_range(self, idx):
+        return idx >= self.__len__() 
+
+    def _expand_memory(self, idx):
+        offset = self._calculate_offset(idx)
+        payload = [self._cell_value] * offset
+        self._list.extend(payload)
+
+    def _calculate_offset(self, idx):
+        max_index = self.__len__() - 1
+        return idx - max_index
+
+    def __setitem__(self, idx, val):
+        self._check_and_expand(idx)
+        self._list[idx] = val
+
+    def __len__(self):
+        return len(self._list)
 
 
 class BF(object):
 
-    def __init__(self):
+    def __init__(self, memory):
         self._program = None
-        cell_size = 256 # 8-bit
-        self._memory = CyclicBoundedList(lower=0, upper=cell_size)
-        self._memory.append(0)
+        self._memory = memory
         self._data_pointer = 0
 
     def load(self, program):
@@ -78,7 +118,11 @@ class BF(object):
 
     @property
     def memory_size(self):
-        return len(self._memory) - 1
+        return len(self._memory)
+
+    @property
+    def data_pointer(self):
+        return self._data_pointer
 
     def run(self):
         for c in self._program:
@@ -87,8 +131,40 @@ class BF(object):
             if c == '-':
                 self._increment_memory(-1)
             if c == '>':
-                self._memory.append(0)
-                self._data_pointer += 1
+                self._move_data_pointer(1)
+            if c == '<':
+                self._move_data_pointer(-1)
+            if c == '.':
+                print(self._get_char_from_memory())
+            if c == ',':
+                self._read_char_to_memory()
     
-    def _increment_memory(self, value):
-        self._memory[self._data_pointer] += value
+    def _increment_memory(self, val):
+        self._memory[self._data_pointer] += val
+
+    def _get_char_from_memory(self):
+        num = self._memory[self._data_pointer]
+        return chr(num)
+
+    def _read_char_to_memory(self):
+        self._memory[self._data_pointer] = ord(self._read_char())
+
+    def _read_char(self):
+        import sys, tty, termios
+        fd = sys.stdin.fileno()
+        settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, settings)
+        return ch
+    
+    def _move_data_pointer(self, pos):
+        next_pos = self._data_pointer + pos 
+        if next_pos >= 0:
+            self._data_pointer = next_pos
+            self._synchronize_memory()
+    
+    def _synchronize_memory(self):
+        self._increment_memory(0)

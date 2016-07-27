@@ -3,12 +3,13 @@
 
 import unittest
 from unittest.mock import Mock, patch
-from bf import BF, InvalidProgramException
+from bf import BF, ExpandableMemory, InvalidProgramException
 
 class BFInterpreterTestCase(unittest.TestCase):
     
     def setUp(self):
-        self.bf = BF()
+        self.memory = ExpandableMemory(cell_size=8)
+        self.bf = BF(self.memory)
         self.mock_print = Mock(return_value=None)
     
     def test_load_program_and_ignore_other_characters(self):
@@ -27,7 +28,6 @@ class BFInterpreterTestCase(unittest.TestCase):
         self.bf.load('++[-]')
         self.assertEqual(self.bf.dump_program(), '++[-]')
 
-    @unittest.skip
     def test_print_initialized_memory_cell(self):
         self.bf.load('.')
         with patch('builtins.print', self.mock_print):
@@ -53,7 +53,8 @@ class BFInterpreterTestCase(unittest.TestCase):
     def test_dump_all_memory(self):
         self.bf.load('+>++')
         self.bf.run()
-        self.assertEqual(self.bf.dump_memory(), [1, 2])
+        self.assertEqual(self.bf.dump_memory(0), 1)
+        self.assertEqual(self.bf.dump_memory(1), 2)
 
     def test_sub_underflow(self):
         self.bf.load('--')
@@ -73,9 +74,25 @@ class BFInterpreterTestCase(unittest.TestCase):
     def test_add_five_memory_cells(self):
         self.bf.load('>>>>>')
         self.bf.run()
-        self.assertEqual(self.bf.memory_size, 5)
+        self.assertEqual(self.bf.memory_size, 6)
 
     def test_add_three_memory_cells(self):
         self.bf.load('>><>>')
         self.bf.run()
         self.assertEqual(self.bf.memory_size, 4)
+
+    def test_empty_memory_length(self):
+        self.assertEqual(self.bf.memory_size, 0)
+
+    def test_out_of_range_memory(self):
+        self.bf.load('<<<<')
+        self.bf.run()
+        self.assertEqual(self.bf.data_pointer, 0)
+        self.assertEqual(self.bf.memory_size, 0)
+
+    def test_read_char(self):
+        self.bf.load(',')
+        mock = Mock(return_value='a')
+        with patch('sys.stdin.read', mock):
+            self.bf.run()
+        self.assertEqual(self.bf.dump_memory(0), ord('a'))
