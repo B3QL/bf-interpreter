@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-#-*-coding: utf-8-*-
+# -*-coding: utf-8-*-
+
+from threading import Timer, Event
+
 
 class InvalidProgramException(Exception):
     pass
 
+
+class ExecutionTimeoutException(Exception):
+    pass
+
+
 class CyclicBoundedList(list):
-    
-    def __init__(self, lower, upper, elements=[]):
+
+    def __init__(self, lower, upper, elements=()):
         self._lower_bound = lower
         self._upper_bound = upper
         super(CyclicBoundedList, self).__init__(
                 self._transform_value(e) for e in elements)
-    
+
     @property
     def lower_bound(self):
         return self._lower_bound
@@ -26,8 +34,8 @@ class CyclicBoundedList(list):
         return val % self._upper_bound
 
     def __setitem__(self, idx, val):
-        super(CyclicBoundedList, self).__setitem__(idx,
-                self._transform_value(val))
+        super(CyclicBoundedList, self).__setitem__(
+            idx, self._transform_value(val))
 
     def append(self, item):
         super(CyclicBoundedList, self).append(
@@ -35,7 +43,7 @@ class CyclicBoundedList(list):
 
     def insert(self, idx, val):
         super(CyclicBoundedList, self).insert(
-                idx, self._transform_value(item))
+                idx, self._transform_value(val))
 
     def extend(self, element):
         super(CyclicBoundedList, self).extend(
@@ -57,7 +65,7 @@ class ExpandableMemory(object):
             self._expand_memory(idx)
 
     def _index_out_of_range(self, idx):
-        return idx >= self.__len__() 
+        return idx >= self.__len__()
 
     def _expand_memory(self, idx):
         offset = self._calculate_offset(idx)
@@ -75,36 +83,45 @@ class ExpandableMemory(object):
     def __len__(self):
         return len(self._list)
 
+    def __repr__(self):
+        return '<%s Content: %s>' % (self.__class__.__qualname__, repr(self._list))
+
 
 class BF(object):
 
     def __init__(self, memory):
         self._program = None
+        self._brackets_map = {}
         self._memory = memory
         self._data_pointer = 0
+        self._inst_pointer = 0
+        self._inst_counter = 0
+        self._exec_timer = None
+        self._timeout = Event()
 
     def load(self, program):
         self._program = self._ignore_characters(program)
-        self._check_brackets()
+        self._map_brackets()
 
     def _ignore_characters(self, program):
         symbols = '><+-.,[]'
         return ''.join(s for s in program if s in symbols)
 
-    def _check_brackets(self):
-        counter = 0
-        for s in self._program:
-            if counter < 0:
-                break
-            if s == '[':
-                counter += 1
-            if s == ']':
-                counter -= 1
+    def _map_brackets(self):
+        brackets = []
+        for ptr, inst in enumerate(self._program):
+            if inst == '[':
+                brackets.append(ptr)
+            if inst == ']':
+                if len(brackets) > 0:
+                    opening_bracket = brackets.pop()
+                    closing_bracket = ptr
+                    self._brackets_map[opening_bracket] = closing_bracket
+                    self._brackets_map[closing_bracket] = opening_bracket
+                else:
+                    raise InvalidProgramException('Missing opening bracket')
 
-        if counter < 0:
-            raise InvalidProgramException('Missing opening bracket')
-
-        if counter != 0:
+        if len(brackets) > 0:
             raise InvalidProgramException('Unbalanced brackets')
 
     def dump_program(self):
@@ -112,9 +129,9 @@ class BF(object):
 
     def dump_memory(self, cell=None):
         if cell is not None:
-            return self._memory[cell] 
+            return self._memory[cell]
         else:
-            return self._memory 
+            return self._memory
 
     @property
     def memory_size(self):
@@ -124,8 +141,17 @@ class BF(object):
     def data_pointer(self):
         return self._data_pointer
 
-    def run(self):
-        for c in self._program:
+    @property
+    def instruction_counter(self):
+        return self._inst_counter
+
+    def run(self, timeout=None):
+        if timeout is not None:
+            self._exec_timer = Timer(timeout, self._timeout.set)
+            self._exec_timer.start()
+
+        while self._inst_pointer < len(self._program) and self._no_timeout():
+            c = self._current_instruction()
             if c == '+':
                 self._increment_memory(1)
             if c == '-':
@@ -138,7 +164,32 @@ class BF(object):
                 print(self._get_char_from_memory())
             if c == ',':
                 self._read_char_to_memory()
-    
+            if c == '[' and self._memory[self._data_pointer] == 0:
+                self._jump_to_bracket()
+            if c == ']':
+                self._jump_to_bracket()
+                self._inst_pointer -= 1
+
+            self._inst_pointer += 1
+            self._inst_counter += 1
+        if self._exec_timer is not None:
+            self._exec_timer.cancel()
+
+    def _no_timeout(self):
+        if self._timeout.is_set():
+            raise ExecutionTimeoutException(
+                    'Timeout at %d instruction, instruction counter: %d, data pointer: %d' %
+                    (self._inst_pointer, self._inst_counter, self._data_pointer)
+            )
+        else:
+            return True
+
+    def _current_instruction(self):
+        return self._program[self._inst_pointer]
+
+    def _jump_to_bracket(self):
+        self._inst_pointer = self._brackets_map[self._inst_pointer]
+
     def _increment_memory(self, val):
         self._memory[self._data_pointer] += val
 
@@ -150,6 +201,7 @@ class BF(object):
         self._memory[self._data_pointer] = ord(self._read_char())
 
     def _read_char(self):
+        # http://code.activestate.com/recipes/134892/
         import sys, tty, termios
         fd = sys.stdin.fileno()
         settings = termios.tcgetattr(fd)
@@ -159,12 +211,12 @@ class BF(object):
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, settings)
         return ch
-    
+
     def _move_data_pointer(self, pos):
-        next_pos = self._data_pointer + pos 
+        next_pos = self._data_pointer + pos
         if next_pos >= 0:
             self._data_pointer = next_pos
             self._synchronize_memory()
-    
+
     def _synchronize_memory(self):
         self._increment_memory(0)
