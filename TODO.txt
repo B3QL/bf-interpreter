@@ -1,3 +1,5 @@
+[ ] Replace custom exceptions with builtins
+[ ] Remove list inheritance in memory related classes
 [ ] Add mode for fixed memory size
 [ ] Add pretty print for memory
 [ ] Improve parser error output (including symbol position and line)
