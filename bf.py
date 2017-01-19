@@ -84,7 +84,8 @@ class ExpandableMemory(object):
         return len(self._list)
 
     def __repr__(self):
-        return '<%s Content: %s>' % (self.__class__.__qualname__, repr(self._list))
+        cls = type(self)
+        return '<%s Content: %s>' % (cls.__name__, repr(self._list))
 
 
 class BF(object):
@@ -177,10 +178,11 @@ class BF(object):
 
     def _no_timeout(self):
         if self._timeout.is_set():
-            raise ExecutionTimeoutException(
-                    'Timeout at %d instruction, instruction counter: %d, data pointer: %d' %
-                    (self._inst_pointer, self._inst_counter, self._data_pointer)
-            )
+            fmt = ('Timeout at {} instruction,'
+                   'instruction counter: {},'
+                   'data pointer: {}')
+            data = self._inst_pointer, self._inst_counter, self._data_pointer
+            raise ExecutionTimeoutException(fmt.format(*data))
         else:
             return True
 
@@ -202,7 +204,7 @@ class BF(object):
 
     def _read_char(self):
         # http://code.activestate.com/recipes/134892/
-        import sys, tty, termios
+        import sys, tty, termios # noqa
         fd = sys.stdin.fileno()
         settings = termios.tcgetattr(fd)
         try:
